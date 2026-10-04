@@ -33,22 +33,6 @@ https://ryrahman.github.io/pdf-audiobook-player/
 6. Press Play to start listening.
 7. Use the chapter, skip, and progress controls to move through the book.
 
-## GitHub Pages Deployment
-
-This project can be hosted directly with GitHub Pages.
-
-1. Create a GitHub repository named `pdf-audiobook-player`.
-2. Upload `index.html` and `README.md`.
-3. Open the repository's **Settings**.
-4. Select **Pages**.
-5. Under **Build and deployment**, select **Deploy from a branch**.
-6. Select the `main` branch and `/root`.
-7. Click **Save**.
-
-Your app should then be available at:
-
-https://ryrahman.github.io/pdf-audiobook-player/
-
 ## Privacy
 
 PDF files are processed in your browser. The app does not intentionally upload your PDF books to a server.
@@ -66,7 +50,3 @@ Browser text-to-speech behavior varies by device. Some mobile browsers may pause
 - Web Speech API
 
 
-
-## License
-
-For personal and educational use.
