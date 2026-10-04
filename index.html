@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b1020" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>PDF Audiobook Player</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #070a12;
+      --panel: rgba(21, 27, 46, .78);
+      --panel-2: rgba(255,255,255,.055);
+      --line: rgba(255,255,255,.10);
+      --text: #f4f7ff;
+      --muted: #9ca9c8;
+      --accent: #7c8cff;
+      --accent-2: #a855f7;
+      --good: #39d98a;
+      --danger: #ff6b7a;
+      --shadow: 0 24px 60px rgba(0,0,0,.45);
+      --radius: 24px;
+    }
+    * { box-sizing: border-box; }
+    html, body { min-height: 100%; }
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 15% -10%, rgba(124,140,255,.22), transparent 34%),
+        radial-gradient(circle at 92% 5%, rgba(168,85,247,.16), transparent 32%),
+        linear-gradient(180deg, #0a0e19 0%, var(--bg) 68%);
+      min-height: 100dvh;
+      padding: max(18px, env(safe-area-inset-top)) 18px max(28px, env(safe-area-inset-bottom));
+    }
+    button, input, select { font: inherit; }
+    button { -webkit-tap-highlight-color: transparent; }
+    .app { width: min(1120px, 100%); margin: 0 auto; }
+    header {
+      display:flex; align-items:center; justify-content:space-between; gap:16px;
+      margin-bottom: 18px;
+    }
+    .brand { display:flex; align-items:center; gap:12px; min-width:0; }
+    .logo {
+      width:44px; height:44px; border-radius:14px; display:grid; place-items:center;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      box-shadow: 0 12px 30px rgba(124,140,255,.32);
+      font-size:22px;
+    }
+    h1 { margin:0; font-size:clamp(20px, 4vw, 30px); letter-spacing:-.03em; }
+    .sub { color:var(--muted); font-size:13px; margin-top:2px; }
+    .uploadBtn {
+      border:1px solid var(--line); background:rgba(255,255,255,.07); color:var(--text);
+      padding:11px 14px; border-radius:14px; cursor:pointer; font-weight:700; white-space:nowrap;
+    }
+    .uploadBtn:hover { background:rgba(255,255,255,.11); }
+    #fileInput { display:none; }
+
+    .grid { display:grid; grid-template-columns: minmax(260px, 360px) 1fr; gap:18px; }
+    .card {
+      background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+      box-shadow:var(--shadow); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+    }
+    .coverCard { padding:18px; display:flex; flex-direction:column; gap:16px; }
+    .coverWrap {
+      position:relative; aspect-ratio: 3 / 4; width:100%; border-radius:18px; overflow:hidden;
+      background:linear-gradient(145deg, #161e34, #0d1220); border:1px solid var(--line);
+      display:grid; place-items:center;
+    }
+    canvas { width:100%; height:100%; object-fit:cover; display:none; }
+    .placeholder { color:var(--muted); text-align:center; padding:28px; }
+    .placeholder .big { font-size:54px; margin-bottom:12px; }
+    .bookMeta { min-width:0; }
+    .bookTitle { font-size:19px; font-weight:800; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+    .bookInfo { color:var(--muted); font-size:13px; margin-top:5px; }
+    .dropzone {
+      border:1px dashed rgba(255,255,255,.22); border-radius:16px; padding:14px; color:var(--muted);
+      text-align:center; font-size:13px; transition:.2s ease;
+    }
+    .dropzone.drag { border-color:var(--accent); background:rgba(124,140,255,.08); color:var(--text); }
+
+    .playerCard { padding:20px; display:flex; flex-direction:column; min-height:610px; }
+    .statusRow { display:flex; gap:10px; justify-content:space-between; align-items:flex-start; margin-bottom:14px; }
+    .statusPill {
+      border:1px solid var(--line); background:var(--panel-2); color:var(--muted); border-radius:999px;
+      padding:6px 10px; font-size:12px; white-space:nowrap;
+    }
+    .statusPill.ready { color:#bff9d8; border-color:rgba(57,217,138,.28); background:rgba(57,217,138,.09); }
+    .chapterTitle { font-size:clamp(22px,4vw,34px); font-weight:850; letter-spacing:-.035em; margin:0 0 4px; }
+    .pageLabel { color:var(--muted); font-size:14px; }
+
+    .progressWrap { margin:24px 0 18px; }
+    .progressTop { display:flex; justify-content:space-between; color:var(--muted); font-size:12px; margin-bottom:7px; }
+    input[type="range"] { width:100%; accent-color:var(--accent); }
+    #progress { height:7px; }
+
+    .mainControls { display:flex; justify-content:center; align-items:center; gap:16px; margin:2px 0 24px; }
+    .round {
+      width:52px; height:52px; border-radius:50%; border:1px solid var(--line); background:rgba(255,255,255,.07);
+      color:var(--text); display:grid; place-items:center; font-size:21px; cursor:pointer;
+    }
+    .round:hover { background:rgba(255,255,255,.12); }
+    .round.primary {
+      width:76px; height:76px; font-size:30px; border:none;
+      background:linear-gradient(135deg,var(--accent),var(--accent-2));
+      box-shadow:0 14px 30px rgba(124,140,255,.30);
+    }
+    .round:disabled { opacity:.35; cursor:not-allowed; }
+
+    .settings { display:grid; grid-template-columns: 1.5fr 1fr 1fr; gap:12px; }
+    .field { background:var(--panel-2); border:1px solid var(--line); padding:12px; border-radius:16px; min-width:0; }
+    .field label { display:block; color:var(--muted); font-size:12px; margin-bottom:8px; }
+    select {
+      width:100%; color:var(--text); background:#11182a; border:1px solid var(--line); border-radius:10px;
+      padding:9px 10px; min-width:0;
+    }
+    .rangeLine { display:flex; align-items:center; gap:8px; }
+    .value { width:42px; text-align:right; font-size:12px; color:var(--text); }
+
+    .secondary { display:flex; flex-wrap:wrap; gap:10px; margin-top:12px; }
+    .smallBtn {
+      flex:1 1 130px; border:1px solid var(--line); color:var(--text); background:var(--panel-2);
+      border-radius:12px; padding:10px 12px; cursor:pointer; font-size:13px;
+    }
+    .smallBtn.active { border-color:rgba(124,140,255,.45); background:rgba(124,140,255,.13); }
+
+    .chapters { margin-top:18px; border-top:1px solid var(--line); padding-top:16px; min-height:0; }
+    .chaptersHead { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
+    .chaptersHead strong { font-size:14px; }
+    .chaptersList { max-height:230px; overflow:auto; padding-right:4px; }
+    .chapterBtn {
+      width:100%; display:flex; align-items:center; justify-content:space-between; gap:10px;
+      border:0; background:transparent; color:var(--text); text-align:left; padding:10px 8px;
+      border-radius:10px; cursor:pointer;
+    }
+    .chapterBtn:hover, .chapterBtn.active { background:rgba(124,140,255,.11); }
+    .chapterBtn span:first-child { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+    .chapterBtn .pg { color:var(--muted); font-size:12px; flex:0 0 auto; }
+
+    .readerText {
+      margin-top:14px; color:#c9d3ed; background:rgba(0,0,0,.16); border:1px solid var(--line);
+      border-radius:14px; padding:14px; font-size:13px; line-height:1.6; max-height:110px; overflow:auto;
+    }
+    .readerText:empty { display:none; }
+    .notice { margin-top:14px; color:var(--muted); font-size:12px; line-height:1.45; }
+    .error { color:#ffc0c6; }
+
+    .loadingOverlay {
+      position:fixed; inset:0; background:rgba(4,6,12,.72); backdrop-filter:blur(12px); display:none;
+      align-items:center; justify-content:center; z-index:20; padding:20px;
+    }
+    .loadingOverlay.show { display:flex; }
+    .loaderBox { width:min(420px, 100%); background:#101625; border:1px solid var(--line); border-radius:20px; padding:22px; box-shadow:var(--shadow); }
+    .loaderBar { height:8px; background:rgba(255,255,255,.08); border-radius:999px; overflow:hidden; margin-top:13px; }
+    .loaderFill { height:100%; width:0%; background:linear-gradient(90deg,var(--accent),var(--accent-2)); transition:width .15s ease; }
+
+    @media (max-width: 760px) {
+      body { padding-left:12px; padding-right:12px; }
+      header { align-items:flex-start; }
+      .grid { grid-template-columns: 1fr; }
+      .coverCard { display:grid; grid-template-columns: 128px 1fr; align-items:start; }
+      .coverWrap { grid-row:span 2; }
+      .dropzone { grid-column:1 / -1; }
+      .playerCard { min-height:auto; padding:16px; }
+      .settings { grid-template-columns:1fr; }
+      .chaptersList { max-height:260px; }
+      .round { width:50px; height:50px; }
+      .round.primary { width:72px; height:72px; }
+    }
+    @media (max-width: 420px) {
+      .sub { display:none; }
+      .uploadBtn { padding:10px 11px; }
+      .coverCard { grid-template-columns: 105px 1fr; }
+      .mainControls { gap:11px; }
+      .round { width:46px; height:46px; }
+      .round.primary { width:68px; height:68px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="brand">
+        <div class="logo">🎧</div>
+        <div>
+          <h1>PDF Audiobook Player</h1>
+          <div class="sub">Your PDF stays on your device. Nothing is uploaded.</div>
+        </div>
+      </div>
+      <label class="uploadBtn" for="fileInput">Open PDF</label>
+      <input id="fileInput" type="file" accept="application/pdf,.pdf" />
+    </header>
+
+    <main class="grid">
+      <section class="card coverCard">
+        <div class="coverWrap" id="coverWrap">
+          <canvas id="coverCanvas"></canvas>
+          <div class="placeholder" id="coverPlaceholder">
+            <div class="big">📖</div>
+            <div>Open a PDF book to begin</div>
+          </div>
+        </div>
+        <div class="bookMeta">
+          <div class="bookTitle" id="bookTitle">No book loaded</div>
+          <div class="bookInfo" id="bookInfo">PDF • local playback</div>
+        </div>
+        <div class="dropzone" id="dropzone">Drop a PDF here</div>
+      </section>
+
+      <section class="card playerCard">
+        <div class="statusRow">
+          <div>
+            <div class="chapterTitle" id="chapterTitle">Ready when you are</div>
+            <div class="pageLabel" id="pageLabel">Open a PDF to start listening.</div>
+          </div>
+          <div class="statusPill" id="statusPill">Idle</div>
+        </div>
+
+        <div class="progressWrap">
+          <div class="progressTop"><span id="progressText">0%</span><span id="chunkText">0 / 0</span></div>
+          <input id="progress" type="range" min="0" max="0" value="0" disabled />
+        </div>
+
+        <div class="mainControls">
+          <button class="round" id="prevChapter" title="Previous chapter" disabled>⏮</button>
+          <button class="round" id="back" title="Back 30 seconds" disabled>↶</button>
+          <button class="round primary" id="play" title="Play" disabled>▶</button>
+          <button class="round" id="forward" title="Forward 30 seconds" disabled>↷</button>
+          <button class="round" id="nextChapter" title="Next chapter" disabled>⏭</button>
+        </div>
+
+        <div class="settings">
+          <div class="field">
+            <label for="voice">Voice</label>
+            <select id="voice"><option>Loading voices…</option></select>
+          </div>
+          <div class="field">
+            <label for="rate">Speed</label>
+            <div class="rangeLine"><input id="rate" type="range" min="0.5" max="2.5" step="0.1" value="1"><span class="value" id="rateValue">1.0×</span></div>
+          </div>
+          <div class="field">
+            <label for="pitch">Pitch</label>
+            <div class="rangeLine"><input id="pitch" type="range" min="0.5" max="2" step="0.1" value="1"><span class="value" id="pitchValue">1.0</span></div>
+          </div>
+        </div>
+
+        <div class="secondary">
+          <button class="smallBtn" id="wakeLockBtn">Keep screen awake</button>
+          <button class="smallBtn" id="restartBtn" disabled>Restart chapter</button>
+        </div>
+
+        <div class="chapters">
+          <div class="chaptersHead"><strong>Chapters</strong><span class="statusPill" id="chapterCount">0</span></div>
+          <div class="chaptersList" id="chaptersList"></div>
+        </div>
+
+        <div class="readerText" id="readerText"></div>
+        <div class="notice" id="notice">Tip: PDF bookmarks make the best chapter list. If a book has no bookmarks, this app will detect chapter headings or create page groups automatically.</div>
+      </section>
+    </main>
+  </div>
+
+  <div class="loadingOverlay" id="loadingOverlay">
+    <div class="loaderBox">
+      <strong id="loadingTitle">Reading PDF…</strong>
+      <div class="notice" id="loadingText">Preparing your book for playback.</div>
+      <div class="loaderBar"><div class="loaderFill" id="loaderFill"></div></div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  'use strict';
+
+  const $ = (id) => document.getElementById(id);
+  const els = {
+    fileInput: $('fileInput'), coverCanvas: $('coverCanvas'), coverPlaceholder: $('coverPlaceholder'),
+    coverWrap: $('coverWrap'), bookTitle: $('bookTitle'), bookInfo: $('bookInfo'), dropzone: $('dropzone'),
+    chapterTitle: $('chapterTitle'), pageLabel: $('pageLabel'), statusPill: $('statusPill'),
+    progress: $('progress'), progressText: $('progressText'), chunkText: $('chunkText'),
+    prevChapter: $('prevChapter'), back: $('back'), play: $('play'), forward: $('forward'), nextChapter: $('nextChapter'),
+    voice: $('voice'), rate: $('rate'), pitch: $('pitch'), rateValue: $('rateValue'), pitchValue: $('pitchValue'),
+    wakeLockBtn: $('wakeLockBtn'), restartBtn: $('restartBtn'), chaptersList: $('chaptersList'), chapterCount: $('chapterCount'),
+    readerText: $('readerText'), notice: $('notice'), loadingOverlay: $('loadingOverlay'), loadingTitle: $('loadingTitle'),
+    loadingText: $('loadingText'), loaderFill: $('loaderFill')
+  };
+
+  if (!window.pdfjsLib) {
+    showError('PDF engine failed to load. Check your internet connection, then refresh.');
+    return;
+  }
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+  const storage = {
+    get(key) { try { return window.localStorage.getItem(key); } catch (_) { return null; } },
+    set(key, value) { try { window.localStorage.setItem(key, value); } catch (_) {} }
+  };
+
+  const state = {
+    pdf: null,
+    fileName: '',
+    pages: [],
+    pageTexts: [],
+    chunks: [],
+    chapters: [],
+    currentChunk: 0,
+    currentChapter: 0,
+    playing: false,
+    paused: false,
+    voices: [],
+    wakeLock: null,
+    estimatedChunkSeconds: 22
+  };
+
+  function cleanText(text) {
+    return text
+      .replace(/\u00ad/g, '')
+      .replace(/-\s*\n\s*/g, '')
+      .replace(/\s+/g, ' ')
+      .replace(/\s+([,.;:!?])/g, '$1')
+      .trim();
+  }
+
+  function splitIntoChunks(text, pageIndex, target = 700) {
+    const cleaned = cleanText(text);
+    if (!cleaned) return [];
+    const sentences = cleaned.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [cleaned];
+    const chunks = [];
+    let buf = '';
+    for (const raw of sentences) {
+      const s = raw.trim();
+      if (!s) continue;
+      if ((buf + ' ' + s).trim().length <= target) {
+        buf = (buf + ' ' + s).trim();
+      } else {
+        if (buf) chunks.push({ text: buf, pageIndex });
+        if (s.length <= target * 1.6) {
+          buf = s;
+        } else {
+          for (let i = 0; i < s.length; i += target) chunks.push({ text: s.slice(i, i + target), pageIndex });
+          buf = '';
+        }
+      }
+    }
+    if (buf) chunks.push({ text: buf, pageIndex });
+    return chunks;
+  }
+
+  function setLoading(show, percent = 0, message = '') {
+    els.loadingOverlay.classList.toggle('show', show);
+    els.loaderFill.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+    if (message) els.loadingText.textContent = message;
+  }
+
+  function showError(message) {
+    els.notice.classList.add('error');
+    els.notice.textContent = message;
+    els.statusPill.textContent = 'Error';
+  }
+
+  function clearError() {
+    els.notice.classList.remove('error');
+    els.notice.textContent = 'Tip: PDF bookmarks make the best chapter list. If a book has no bookmarks, this app will detect chapter headings or create page groups automatically.';
+  }
+
+  async function renderCover(pdf) {
+    const page = await pdf.getPage(1);
+    const unscaled = page.getViewport({ scale: 1 });
+    const targetWidth = 720;
+    const viewport = page.getViewport({ scale: targetWidth / unscaled.width });
+    const canvas = els.coverCanvas;
+    const ctx = canvas.getContext('2d', { alpha: false });
+    canvas.width = Math.floor(viewport.width);
+    canvas.height = Math.floor(viewport.height);
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    canvas.style.display = 'block';
+    els.coverPlaceholder.style.display = 'none';
+  }
+
+  async function resolveDestinationToPage(pdf, dest) {
+    try {
+      const explicitDest = typeof dest === 'string' ? await pdf.getDestination(dest) : dest;
+      if (!explicitDest || !explicitDest[0]) return null;
+      const ref = explicitDest[0];
+      return await pdf.getPageIndex(ref);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async function flattenOutline(pdf, items, depth = 0, out = []) {
+    if (!items) return out;
+    for (const item of items) {
+      const pageIndex = await resolveDestinationToPage(pdf, item.dest);
+      if (pageIndex !== null) {
+        out.push({ title: cleanText(item.title || `Page ${pageIndex + 1}`), pageIndex, depth });
+      }
+      if (item.items?.length) await flattenOutline(pdf, item.items, depth + 1, out);
+    }
+    return out;
+  }
+
+  function detectChapterHeadings(pageTexts) {
+    const found = [];
+    const patterns = [
+      /^\s*(chapter|part|book)\s+([0-9ivxlcdm]+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b[^\n]{0,90}/im,
+      /^\s*(prologue|epilogue|introduction|preface|foreword|afterword|acknowledg(e)?ments)\b[^\n]{0,90}/im
+    ];
+    pageTexts.forEach((text, pageIndex) => {
+      const lines = String(text || '').split(/\n|\r/).map(s => s.trim()).filter(Boolean).slice(0, 18);
+      const probe = lines.join('\n');
+      for (const re of patterns) {
+        const m = probe.match(re);
+        if (m) {
+          const title = cleanText(m[0]).slice(0, 100);
+          if (!found.length || found[found.length - 1].title.toLowerCase() !== title.toLowerCase()) {
+            found.push({ title, pageIndex, depth: 0 });
+          }
+          break;
+        }
+      }
+    });
+    return found;
+  }
+
+  function fallbackChapters(numPages) {
+    const size = numPages <= 30 ? 5 : numPages <= 150 ? 10 : 15;
+    const out = [];
+    for (let i = 0; i < numPages; i += size) {
+      out.push({ title: `Pages ${i + 1}–${Math.min(i + size, numPages)}`, pageIndex: i, depth: 0 });
+    }
+    return out;
+  }
+
+  function buildChapterChunkRanges() {
+    if (!state.chapters.length || !state.chunks.length) return;
+    state.chapters.sort((a,b) => a.pageIndex - b.pageIndex);
+    state.chapters = state.chapters.filter((c, i, arr) => i === 0 || c.pageIndex !== arr[i-1].pageIndex || c.title !== arr[i-1].title);
+    state.chapters.forEach((chapter, idx) => {
+      const nextPage = state.chapters[idx + 1]?.pageIndex ?? Infinity;
+      const start = state.chunks.findIndex(c => c.pageIndex >= chapter.pageIndex);
+      let end = state.chunks.findIndex((c, i) => i > start && c.pageIndex >= nextPage);
+      if (end < 0) end = state.chunks.length;
+      chapter.startChunk = Math.max(0, start);
+      chapter.endChunk = Math.max(chapter.startChunk + 1, end);
+    });
+  }
+
+  async function loadPDF(file) {
+    clearError();
+    stopSpeech();
+    setLoading(true, 2, 'Opening PDF…');
+    try {
+      if (!file || file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+        throw new Error('Please choose a PDF file.');
+      }
+      state.fileName = file.name;
+      els.bookTitle.textContent = file.name.replace(/\.pdf$/i, '');
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const loadingTask = pdfjsLib.getDocument({ data: bytes });
+      const pdf = await loadingTask.promise;
+      state.pdf = pdf;
+      await renderCover(pdf);
+
+      setLoading(true, 8, `Reading ${pdf.numPages} pages…`);
+      state.pageTexts = new Array(pdf.numPages);
+      state.chunks = [];
+
+      for (let i = 0; i < pdf.numPages; i++) {
+        const page = await pdf.getPage(i + 1);
+        const content = await page.getTextContent();
+        let text = '';
+        let lastY = null;
+        for (const item of content.items) {
+          const y = item.transform?.[5] ?? null;
+          if (lastY !== null && y !== null && Math.abs(y - lastY) > 3) text += '\n';
+          text += item.str + (item.hasEOL ? '\n' : ' ');
+          lastY = y;
+        }
+        state.pageTexts[i] = text;
+        state.chunks.push(...splitIntoChunks(text, i));
+        const pct = 8 + Math.round(((i + 1) / pdf.numPages) * 76);
+        setLoading(true, pct, `Reading page ${i + 1} of ${pdf.numPages}…`);
+      }
+
+      if (!state.chunks.length) throw new Error('This PDF has no selectable text. It may be a scanned/image-only book. OCR would be required before it can be read aloud.');
+
+      setLoading(true, 88, 'Finding chapters…');
+      const outline = await pdf.getOutline();
+      let chapters = await flattenOutline(pdf, outline);
+      if (!chapters.length) chapters = detectChapterHeadings(state.pageTexts);
+      if (!chapters.length) chapters = fallbackChapters(pdf.numPages);
+      if (chapters[0]?.pageIndex > 0) chapters.unshift({ title: 'Beginning', pageIndex: 0, depth: 0 });
+      state.chapters = chapters;
+      buildChapterChunkRanges();
+
+      state.currentChunk = 0;
+      state.currentChapter = 0;
+      els.bookInfo.textContent = `${pdf.numPages} pages • ${state.chapters.length} chapters/sections`;
+      els.progress.max = Math.max(0, state.chunks.length - 1);
+      els.progress.value = 0;
+      els.progress.disabled = false;
+      setControlsEnabled(true);
+      renderChapters();
+      syncUI();
+      els.statusPill.textContent = 'Ready';
+      els.statusPill.classList.add('ready');
+      setLoading(true, 100, 'Ready to listen.');
+      setTimeout(() => setLoading(false), 280);
+    } catch (err) {
+      console.error(err);
+      setLoading(false);
+      showError(err?.message || 'Could not open this PDF.');
+      setControlsEnabled(false);
+    }
+  }
+
+  function setControlsEnabled(enabled) {
+    [els.play, els.back, els.forward, els.prevChapter, els.nextChapter, els.restartBtn].forEach(b => b.disabled = !enabled);
+  }
+
+  function loadVoices() {
+    const voices = speechSynthesis.getVoices();
+    if (!voices.length) return;
+    state.voices = voices;
+    const previous = storage.get('pdf-audio-voice') || '';
+    els.voice.innerHTML = '';
+    voices.forEach((v, i) => {
+      const opt = document.createElement('option');
+      opt.value = String(i);
+      opt.textContent = `${v.name} (${v.lang})${v.default ? ' • Default' : ''}`;
+      els.voice.appendChild(opt);
+    });
+    let chosen = voices.findIndex(v => `${v.name}|${v.lang}` === previous);
+    if (chosen < 0) chosen = voices.findIndex(v => /^en(-|_)/i.test(v.lang));
+    if (chosen < 0) chosen = 0;
+    els.voice.value = String(chosen);
+  }
+
+  function currentVoice() {
+    return state.voices[Number(els.voice.value)] || null;
+  }
+
+  function estimateSecondsPerChunk() {
+    const rate = Number(els.rate.value) || 1;
+    const chunk = state.chunks[state.currentChunk];
+    if (!chunk) return 22;
+    const words = chunk.text.trim().split(/\s+/).length;
+    return Math.max(8, (words / (170 * rate)) * 60);
+  }
+
+  function findCurrentChapter() {
+    let idx = 0;
+    for (let i = 0; i < state.chapters.length; i++) {
+      if (state.currentChunk >= (state.chapters[i].startChunk ?? 0)) idx = i;
+      else break;
+    }
+    state.currentChapter = idx;
+    return state.chapters[idx];
+  }
+
+  function syncUI() {
+    if (!state.chunks.length) return;
+    state.currentChunk = Math.max(0, Math.min(state.currentChunk, state.chunks.length - 1));
+    const chunk = state.chunks[state.currentChunk];
+    const chapter = findCurrentChapter();
+    els.chapterTitle.textContent = chapter?.title || 'Book';
+    els.pageLabel.textContent = `Page ${chunk.pageIndex + 1} of ${state.pdf.numPages}`;
+    els.progress.value = state.currentChunk;
+    const pct = state.chunks.length <= 1 ? 100 : Math.round((state.currentChunk / (state.chunks.length - 1)) * 100);
+    els.progressText.textContent = `${pct}%`;
+    els.chunkText.textContent = `${state.currentChunk + 1} / ${state.chunks.length}`;
+    els.readerText.textContent = chunk.text;
+    [...els.chaptersList.children].forEach((el, i) => el.classList.toggle('active', i === state.currentChapter));
+  }
+
+  function updateMediaSession() {
+    if (!('mediaSession' in navigator)) return;
+    const title = els.bookTitle.textContent || 'PDF Audiobook';
+    const chapter = state.chapters[state.currentChapter]?.title || 'PDF Audiobook';
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: chapter,
+        artist: title,
+        album: 'PDF Audiobook Player'
+      });
+      navigator.mediaSession.playbackState = state.playing ? 'playing' : 'paused';
+    } catch (_) {}
+  }
+
+  function speakCurrent() {
+    if (!state.chunks.length) return;
+    speechSynthesis.cancel();
+    state.playing = true;
+    state.paused = false;
+    els.play.textContent = '⏸';
+    els.play.title = 'Pause';
+    els.statusPill.textContent = 'Playing';
+    els.statusPill.classList.add('ready');
+    syncUI();
+    updateMediaSession();
+
+    const utterance = new SpeechSynthesisUtterance(state.chunks[state.currentChunk].text);
+    const voice = currentVoice();
+    if (voice) utterance.voice = voice;
+    utterance.rate = Number(els.rate.value);
+    utterance.pitch = Number(els.pitch.value);
+    utterance.volume = 1;
+    state.estimatedChunkSeconds = estimateSecondsPerChunk();
+
+    utterance.onend = () => {
+      if (!state.playing) return;
+      if (state.currentChunk < state.chunks.length - 1) {
+        state.currentChunk++;
+        speakCurrent();
+      } else {
+        state.playing = false;
+        els.play.textContent = '▶';
+        els.statusPill.textContent = 'Finished';
+        updateMediaSession();
+      }
+    };
+    utterance.onerror = (event) => {
+      if (event.error === 'canceled' || event.error === 'interrupted') return;
+      state.playing = false;
+      els.play.textContent = '▶';
+      els.statusPill.textContent = 'Stopped';
+      showError(`Speech playback stopped: ${event.error || 'unknown error'}. Try another voice.`);
+    };
+    speechSynthesis.speak(utterance);
+  }
+
+  function pauseSpeech() {
+    if (!state.playing) return;
+    try { speechSynthesis.pause(); } catch (_) {}
+    state.playing = false;
+    state.paused = true;
+    els.play.textContent = '▶';
+    els.play.title = 'Resume';
+    els.statusPill.textContent = 'Paused';
+    updateMediaSession();
+  }
+
+  function resumeSpeech() {
+    if (!state.paused) return speakCurrent();
+    try {
+      speechSynthesis.resume();
+      state.playing = true;
+      state.paused = false;
+      els.play.textContent = '⏸';
+      els.statusPill.textContent = 'Playing';
+      updateMediaSession();
+    } catch (_) {
+      speakCurrent();
+    }
+  }
+
+  function stopSpeech() {
+    try { speechSynthesis.cancel(); } catch (_) {}
+    state.playing = false;
+    state.paused = false;
+    if (els.play) els.play.textContent = '▶';
+    updateMediaSession();
+  }
+
+  function seekToChunk(index, autoplay = state.playing) {
+    const shouldPlay = autoplay || state.paused;
+    stopSpeech();
+    state.currentChunk = Math.max(0, Math.min(index, state.chunks.length - 1));
+    syncUI();
+    if (shouldPlay) speakCurrent();
+  }
+
+  function jumpApproxSeconds(seconds) {
+    const per = Math.max(6, state.estimatedChunkSeconds || 22);
+    const jump = Math.max(1, Math.round(Math.abs(seconds) / per));
+    seekToChunk(state.currentChunk + Math.sign(seconds) * jump, state.playing);
+  }
+
+  function jumpChapter(delta) {
+    if (!state.chapters.length) return;
+    const target = Math.max(0, Math.min(state.currentChapter + delta, state.chapters.length - 1));
+    seekToChunk(state.chapters[target].startChunk || 0, state.playing);
+  }
+
+  function renderChapters() {
+    els.chaptersList.innerHTML = '';
+    els.chapterCount.textContent = String(state.chapters.length);
+    state.chapters.forEach((chapter, i) => {
+      const btn = document.createElement('button');
+      btn.className = 'chapterBtn';
+      btn.style.paddingLeft = `${8 + Math.min(2, chapter.depth || 0) * 14}px`;
+      const left = document.createElement('span');
+      left.textContent = chapter.title;
+      const pg = document.createElement('span');
+      pg.className = 'pg';
+      pg.textContent = `p. ${chapter.pageIndex + 1}`;
+      btn.append(left, pg);
+      btn.addEventListener('click', () => seekToChunk(chapter.startChunk || 0, state.playing));
+      els.chaptersList.appendChild(btn);
+    });
+  }
+
+  async function toggleWakeLock() {
+    if (!('wakeLock' in navigator)) {
+      alert('Screen Wake Lock is not supported by this browser.');
+      return;
+    }
+    try {
+      if (state.wakeLock) {
+        await state.wakeLock.release();
+        state.wakeLock = null;
+        els.wakeLockBtn.classList.remove('active');
+        els.wakeLockBtn.textContent = 'Keep screen awake';
+      } else {
+        state.wakeLock = await navigator.wakeLock.request('screen');
+        els.wakeLockBtn.classList.add('active');
+        els.wakeLockBtn.textContent = 'Screen staying awake';
+        state.wakeLock.addEventListener('release', () => {
+          state.wakeLock = null;
+          els.wakeLockBtn.classList.remove('active');
+          els.wakeLockBtn.textContent = 'Keep screen awake';
+        });
+      }
+    } catch (err) {
+      alert(`Could not keep the screen awake: ${err.message}`);
+    }
+  }
+
+  function installMediaSessionHandlers() {
+    if (!('mediaSession' in navigator)) return;
+    const handlers = {
+      play: () => resumeSpeech(),
+      pause: () => pauseSpeech(),
+      previoustrack: () => jumpChapter(-1),
+      nexttrack: () => jumpChapter(1),
+      seekbackward: (details) => jumpApproxSeconds(-(details.seekOffset || 30)),
+      seekforward: (details) => jumpApproxSeconds(details.seekOffset || 30)
+    };
+    for (const [name, fn] of Object.entries(handlers)) {
+      try { navigator.mediaSession.setActionHandler(name, fn); } catch (_) {}
+    }
+  }
+
+  els.fileInput.addEventListener('change', e => loadPDF(e.target.files?.[0]));
+  els.dropzone.addEventListener('click', () => els.fileInput.click());
+  ['dragenter','dragover'].forEach(type => els.dropzone.addEventListener(type, e => {
+    e.preventDefault(); els.dropzone.classList.add('drag');
+  }));
+  ['dragleave','drop'].forEach(type => els.dropzone.addEventListener(type, e => {
+    e.preventDefault(); els.dropzone.classList.remove('drag');
+  }));
+  els.dropzone.addEventListener('drop', e => loadPDF(e.dataTransfer.files?.[0]));
+
+  els.play.addEventListener('click', () => {
+    if (state.playing) pauseSpeech();
+    else if (state.paused) resumeSpeech();
+    else speakCurrent();
+  });
+  els.back.addEventListener('click', () => jumpApproxSeconds(-30));
+  els.forward.addEventListener('click', () => jumpApproxSeconds(30));
+  els.prevChapter.addEventListener('click', () => jumpChapter(-1));
+  els.nextChapter.addEventListener('click', () => jumpChapter(1));
+  els.restartBtn.addEventListener('click', () => seekToChunk(state.chapters[state.currentChapter]?.startChunk || 0, state.playing));
+  els.progress.addEventListener('change', () => seekToChunk(Number(els.progress.value), state.playing));
+  els.progress.addEventListener('input', () => {
+    const v = Number(els.progress.value);
+    const pct = state.chunks.length <= 1 ? 100 : Math.round((v / (state.chunks.length - 1)) * 100);
+    els.progressText.textContent = `${pct}%`;
+  });
+  els.voice.addEventListener('change', () => {
+    const v = currentVoice();
+    if (v) storage.set('pdf-audio-voice', `${v.name}|${v.lang}`);
+    if (state.playing) seekToChunk(state.currentChunk, true);
+  });
+  els.rate.addEventListener('input', () => {
+    els.rateValue.textContent = `${Number(els.rate.value).toFixed(1)}×`;
+    storage.set('pdf-audio-rate', els.rate.value);
+  });
+  els.rate.addEventListener('change', () => { if (state.playing) seekToChunk(state.currentChunk, true); });
+  els.pitch.addEventListener('input', () => {
+    els.pitchValue.textContent = Number(els.pitch.value).toFixed(1);
+    storage.set('pdf-audio-pitch', els.pitch.value);
+  });
+  els.pitch.addEventListener('change', () => { if (state.playing) seekToChunk(state.currentChunk, true); });
+  els.wakeLockBtn.addEventListener('click', toggleWakeLock);
+
+  document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState === 'visible' && els.wakeLockBtn.classList.contains('active') && !state.wakeLock) {
+      try { state.wakeLock = await navigator.wakeLock.request('screen'); } catch (_) {}
+    }
+  });
+
+  window.addEventListener('beforeunload', () => stopSpeech());
+  speechSynthesis.onvoiceschanged = loadVoices;
+  loadVoices();
+  installMediaSessionHandlers();
+
+  const savedRate = storage.get('pdf-audio-rate');
+  const savedPitch = storage.get('pdf-audio-pitch');
+  if (savedRate) els.rate.value = savedRate;
+  if (savedPitch) els.pitch.value = savedPitch;
+  els.rateValue.textContent = `${Number(els.rate.value).toFixed(1)}×`;
+  els.pitchValue.textContent = Number(els.pitch.value).toFixed(1);
+})();
+</script>
+</body>
+</html>
