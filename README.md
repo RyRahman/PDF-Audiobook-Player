@@ -4,7 +4,7 @@ Turn PDF books into an audiobook-style listening experience directly in your bro
 
 ## Live App
 
-https://ryrahman.github.io/pdf-audiobook-player/
+https://ryrahman.github.io/PDF-Audiobook-Player/
 
 ## Features
 
